@@ -5,12 +5,21 @@ metadata:
   labels:
     app: tuning-job
 spec:
-  imagePullPolicy: IfNotPresent
+  # Advised by pytorch to enable hostIPC
+  hostIPC: true
   imagePullSecrets:
     - name: regcred
   containers:
   - name: tuning-engine
     image: powerml/tuning-engine-nvidia:v0.9.1
+    imagePullPolicy: IfNotPresent
     resources:
       limits:
         nvidia.com/gpu: 1    # Request 1 GPU
+    securityContext:
+      # Running as root to allow IPC_LOCK capability,
+      # which in turn was required by pytorch to remove certain warnings.
+      runAsUser: 0
+      capabilities:
+        add:
+        - IPC_LOCK
