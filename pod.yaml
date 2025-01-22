@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: tuning-job
+  labels:
+    app: tuning-job
+spec:
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets:
+    - name: regcred
+  containers:
+  - name: tuning-engine
+    image: powerml/tuning-engine-nvidia:v0.9.1
+    resources:
+      limits:
+        nvidia.com/gpu: 1    # Request 1 GPU
