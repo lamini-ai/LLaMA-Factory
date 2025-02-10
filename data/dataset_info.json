@@ -38,6 +38,20 @@
       "assistant_tag": "assistant"
     }
   },
+  "mllm_audio_demo": {
+    "file_name": "mllm_audio_demo.json",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "audios": "audios"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant"
+    }
+  },
   "mllm_video_demo": {
     "file_name": "mllm_video_demo.json",
     "formatting": "sharegpt",
@@ -296,6 +310,28 @@
       "response": "answer"
     }
   },
+  "openo1_sft": {
+    "hf_hub_url": "llamafactory/OpenO1-SFT",
+    "ms_hub_url": "llamafactory/OpenO1-SFT",
+    "columns": {
+      "prompt": "prompt",
+      "response": "response"
+    }
+  },
+  "open_thoughts": {
+    "hf_hub_url": "open-thoughts/OpenThoughts-114k",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "conversations",
+      "system": "system"
+    },
+    "tags": {
+      "role_tag": "from",
+      "content_tag": "value",
+      "user_tag": "user",
+      "assistant_tag": "assistant"
+    }
+  },
   "llava_1k_en": {
     "hf_hub_url": "BUAADreamer/llava-en-zh-2k",
     "subset": "en",
@@ -426,7 +462,7 @@
     }
   },
   "dpo_mix_en": {
-    "hf_hub_url": "hiyouga/DPO-En-Zh-20k",
+    "hf_hub_url": "llamafactory/DPO-En-Zh-20k",
     "subset": "en",
     "ranking": true,
     "formatting": "sharegpt",
@@ -437,7 +473,7 @@
     }
   },
   "dpo_mix_zh": {
-    "hf_hub_url": "hiyouga/DPO-En-Zh-20k",
+    "hf_hub_url": "llamafactory/DPO-En-Zh-20k",
     "subset": "zh",
     "ranking": true,
     "formatting": "sharegpt",
