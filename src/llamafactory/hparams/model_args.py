@@ -58,13 +58,21 @@ class ProcessorArguments:
     Arguments pertaining to the image processor.
     """
 
-    image_resolution: int = field(
+    image_max_pixels: int = field(
         default=768 * 768,
         metadata={"help": "The maximum number of pixels of image inputs."},
     )
-    video_resolution: int = field(
+    image_min_pixels: int = field(
+        default=32 * 32,
+        metadata={"help": "The minimum number of pixels of image inputs."},
+    )
+    video_max_pixels: int = field(
         default=256 * 256,
         metadata={"help": "The maximum number of pixels of video inputs."},
+    )
+    video_min_pixels: int = field(
+        default=16 * 16,
+        metadata={"help": "The minimum number of pixels of video inputs."},
     )
     video_fps: float = field(
         default=2.0,
@@ -87,7 +95,7 @@ class ExportArguments:
         metadata={"help": "Path to the directory to save the exported model."},
     )
     export_size: int = field(
-        default=1,
+        default=5,
         metadata={"help": "The file shard size (in GB) of the exported model."},
     )
     export_device: Literal["cpu", "auto"] = field(
