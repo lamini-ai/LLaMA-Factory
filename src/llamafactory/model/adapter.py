@@ -264,7 +264,7 @@ def _setup_mome_tuning(
     cast_trainable_params_to_fp32: bool,
 ) -> "PeftModel":
     if is_trainable:
-        logger.info_rank0("Fine-tuning method: {}".format("DoRA" if finetuning_args.use_dora else "LoRA"))
+        logger.info_rank0("Mome-tuning method: {}".format("DoRA" if finetuning_args.use_dora else "Mome"))
 
     adapter_to_resume = None
 
