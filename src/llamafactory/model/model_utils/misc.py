@@ -1,4 +1,4 @@
-# Copyright 2024 the LlamaFactory team.
+# Copyright 2025 the LlamaFactory team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -53,6 +53,44 @@ def find_all_linear_modules(model: "PreTrainedModel", freeze_vision_tower: bool)
     logger.info_rank0("Found linear modules: {}".format(",".join(module_names)))
     return list(module_names)
 
+def find_skinny_mome_modules(model: "PreTrainedModel", freeze_vision_tower: bool) -> List[str]:
+    r"""
+    Finds all available modules for mome
+    """
+    model_type = getattr(model.config, "model_type", None)
+    forbidden_modules = {"lm_head"}
+    if model_type == "chatglm":
+        forbidden_modules.add("output_layer")
+    elif model_type == "internlm2":
+        forbidden_modules.add("output")
+
+    if model_type in COMPOSITE_MODELS:
+        forbidden_modules.add(COMPOSITE_MODELS[model_type].projector_key)
+
+    if freeze_vision_tower and model_type in COMPOSITE_MODELS:
+        forbidden_modules.update(COMPOSITE_MODELS[model_type].vision_model_keys)
+
+    def is_mome_module(layer_attribute_set, name) -> bool:
+        """
+        :param layer_attribute_set: decide if a layer attribute is what MOME interested in.
+        :param name: layer name
+        :return: bool
+        """
+        for layer_attribute in layer_attribute_set:
+            if layer_attribute in name:
+                return True
+        return False
+    module_names = set()
+    for name, module in model.named_modules():
+        if any(forbidden_module in name for forbidden_module in forbidden_modules):
+            continue
+        skinny_mome_initial_set= ['q_proj', 'k_proj', 'v_proj', 'o_proj', 'gate_proj', 'forward']
+        if is_mome_module(skinny_mome_initial_set, module.__class__.__name__)and "Embedding" not in module.__class__.__name__:
+            module_names.add(name.split(".")[-1])
+
+    logger.info_rank0("Found mome modules: {}".format(",".join(module_names)))
+    return list(module_names)
+
 
 def find_expanded_modules(model: "PreTrainedModel", target_modules: List[str], num_layer_trainable: int) -> List[str]:
     r"""
@@ -77,7 +115,7 @@ def find_expanded_modules(model: "PreTrainedModel", target_modules: List[str], n
         ):
             module_names.append(name)
 
-    logger.info_rank0("Apply lora to layers: {}".format(",".join(map(str, trainable_layer_ids))))
+    logger.info_rank0("Apply lora to layers: {}.".format(",".join(map(str, trainable_layer_ids))))
     return module_names
 
 

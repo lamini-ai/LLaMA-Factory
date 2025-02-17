@@ -1,4 +1,4 @@
-# Copyright 2024 the LlamaFactory team.
+# Copyright 2025 the LlamaFactory team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -397,12 +397,12 @@ class FinetuningArguments(
         default=False,
         metadata={"help": "Whether or not to train model in purely bf16 precision (without AMP)."},
     )
-    stage: Literal["pt", "sft", "rm", "ppo", "dpo", "kto"] = field(
-        default="sft",
+    stage: Literal["pt", "sft", "rm", "ppo", "dpo", "kto", "mome"] = field(
+        default="mome",
         metadata={"help": "Which stage will be performed in training."},
     )
-    finetuning_type: Literal["lora", "freeze", "full"] = field(
-        default="lora",
+    finetuning_type: Literal["lora", "freeze", "full", "skinny_mome"] = field(
+        default="skinny_mome",
         metadata={"help": "Which fine-tuning method to use."},
     )
     use_llama_pro: bool = field(
@@ -415,7 +415,7 @@ class FinetuningArguments(
     )
     freeze_vision_tower: bool = field(
         default=True,
-        metadata={"help": "Whether ot not to freeze vision tower in MLLM training."},
+        metadata={"help": "Whether or not to freeze vision tower in MLLM training."},
     )
     freeze_multi_modal_projector: bool = field(
         default=True,
@@ -450,16 +450,17 @@ class FinetuningArguments(
 
         self.freeze_trainable_modules: List[str] = split_arg(self.freeze_trainable_modules)
         self.freeze_extra_modules: Optional[List[str]] = split_arg(self.freeze_extra_modules)
-        self.lora_alpha: int = self.lora_alpha or self.lora_rank * 2
+        self.lora_alpha: int = self.lora_alpha or 1
         self.lora_target: List[str] = split_arg(self.lora_target)
         self.additional_target: Optional[List[str]] = split_arg(self.additional_target)
         self.galore_target: List[str] = split_arg(self.galore_target)
         self.apollo_target: List[str] = split_arg(self.apollo_target)
         self.freeze_vision_tower = self.freeze_vision_tower or self.train_mm_proj_only
         self.freeze_multi_modal_projector = self.freeze_multi_modal_projector and not self.train_mm_proj_only
+        self.find_skinny_mome_modules = self.find_skinny_mome_modules
         self.use_ref_model = self.stage == "dpo" and self.pref_loss not in ["orpo", "simpo"]
 
-        assert self.finetuning_type in ["lora", "freeze", "full"], "Invalid fine-tuning method."
+        assert self.finetuning_type in ["lora", "freeze", "full", "mome"], "Invalid fine-tuning method."
         assert self.ref_model_quantization_bit in [None, 8, 4], "We only accept 4-bit or 8-bit quantization."
         assert self.reward_model_quantization_bit in [None, 8, 4], "We only accept 4-bit or 8-bit quantization."
 
@@ -477,6 +478,9 @@ class FinetuningArguments(
 
         if self.finetuning_type == "lora" and (self.use_galore or self.use_apollo or self.use_badam):
             raise ValueError("Cannot use LoRA with GaLore, APOLLO or BAdam together.")
+
+        if self.stage == "mome" and self.finetuning_type != "skinny_mome":
+            raise ValueError("Skinny mome is only good for stage mome")
 
         if int(self.use_galore) + int(self.use_apollo) + (self.use_badam) > 1:
             raise ValueError("Cannot use GaLore, APOLLO or BAdam together.")
