@@ -80,8 +80,6 @@ def run_skinny_mome(
         metric_module["preprocess_logits_for_metrics"] = eval_logit_processor
 
     # Keyword arguments for `model.generate`
-    print(generating_args[0],'ljahdjlahdlashdkjahdjkahdkjahjkdshakjdhjkashdjkashdkjahskjdhaskjdhaskdhkjasjhdkja________________________')
-    print(generating_args.do_sample,'ljahdjlahdlashdkjahdjkahdkjahjkdshakjdhjkashdjkashdkjahskjdhaskjdhaskdhkjasjhdkja________________________')
     gen_kwargs = generating_args.to_dict(obey_generation_config=True)
     gen_kwargs["eos_token_id"] = [tokenizer.eos_token_id] + tokenizer.additional_special_tokens_ids
     gen_kwargs["pad_token_id"] = tokenizer.pad_token_id
