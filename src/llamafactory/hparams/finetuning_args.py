@@ -460,7 +460,7 @@ class FinetuningArguments(
         self.find_skinny_mome_modules = self.find_skinny_mome_modules
         self.use_ref_model = self.stage == "dpo" and self.pref_loss not in ["orpo", "simpo"]
 
-        assert self.finetuning_type in ["lora", "freeze", "full", "mome"], "Invalid fine-tuning method."
+        assert self.finetuning_type in ["lora", "freeze", "full", "skinny_mome"], "Invalid fine-tuning method."
         assert self.ref_model_quantization_bit in [None, 8, 4], "We only accept 4-bit or 8-bit quantization."
         assert self.reward_model_quantization_bit in [None, 8, 4], "We only accept 4-bit or 8-bit quantization."
 
@@ -479,8 +479,8 @@ class FinetuningArguments(
         if self.finetuning_type == "lora" and (self.use_galore or self.use_apollo or self.use_badam):
             raise ValueError("Cannot use LoRA with GaLore, APOLLO or BAdam together.")
 
-        if self.stage == "mome" and self.finetuning_type != "skinny_mome":
-            raise ValueError("Skinny mome is only good for stage mome")
+        if self.stage == "skinny_mome" and self.finetuning_type != "skinny_mome":
+            raise ValueError("Skinny mome is only good for stage skinny mome")
 
         if int(self.use_galore) + int(self.use_apollo) + (self.use_badam) > 1:
             raise ValueError("Cannot use GaLore, APOLLO or BAdam together.")
