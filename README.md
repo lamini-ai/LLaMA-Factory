@@ -1,4 +1,15 @@
-![# LLaMA Factory](assets/logo.png)
+
+
+## Quick start for Skinny MoME 
+[ Be sure to set up properly by following the instructions in the ## Getting Started sessions below]
+```bash
+llamafactory-cli train /Users/lamini/git/private_lf/examples/train_skinny_mome/llama3_sm.yaml
+```
+
+Skinny Mome run sample:
+<img width="1286" alt="Screenshot 2025-02-19 at 2 17 41 PM" src="https://github.com/user-attachments/assets/e1e4a084-c5f7-4828-9f62-9738c8c1ac05" />
+
+
 
 [![GitHub Repo stars](https://img.shields.io/github/stars/hiyouga/LLaMA-Factory?style=social)](https://github.com/hiyouga/LLaMA-Factory/stargazers)
 [![GitHub last commit](https://img.shields.io/github/last-commit/hiyouga/LLaMA-Factory)](https://github.com/hiyouga/LLaMA-Factory/commits/main)
@@ -520,10 +531,16 @@ Please refer to [data/README.md](data/README.md) for checking the details about 
 Use the following 3 commands to run LoRA **fine-tuning**, **inference** and **merging** of the Llama3-8B-Instruct model, respectively.
 
 ```bash
+llamafactory-cli train /Users/lamini/git/private_lf/examples/train_skinny_mome/llama3_sm.yaml
 llamafactory-cli train examples/train_lora/llama3_lora_sft.yaml
 llamafactory-cli chat examples/inference/llama3_lora_sft.yaml
 llamafactory-cli export examples/merge_lora/llama3_lora_sft.yaml
 ```
+
+Skinny Mome run sample:
+<img width="1286" alt="Screenshot 2025-02-19 at 2 17 41 PM" src="https://github.com/user-attachments/assets/e1e4a084-c5f7-4828-9f62-9738c8c1ac05" />
+
+
 
 See [examples/README.md](examples/README.md) for advanced usage (including distributed training).
 
