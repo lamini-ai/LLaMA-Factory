@@ -16,4 +16,3 @@ from .workflow import run_skinny_mome
 
 
 __all__ = ["run_skinny_mome"]
-def run_skinny_mome():
