@@ -397,8 +397,8 @@ class FinetuningArguments(
         default=False,
         metadata={"help": "Whether or not to train model in purely bf16 precision (without AMP)."},
     )
-    stage: Literal["pt", "sft", "rm", "ppo", "dpo", "kto", "mome"] = field(
-        default="mome",
+    stage: Literal["pt", "sft", "rm", "ppo", "dpo", "kto", "skinny_mome"] = field(
+        default="skinny_mome",
         metadata={"help": "Which stage will be performed in training."},
     )
     finetuning_type: Literal["lora", "freeze", "full", "skinny_mome"] = field(
@@ -479,8 +479,8 @@ class FinetuningArguments(
         if self.finetuning_type == "lora" and (self.use_galore or self.use_apollo or self.use_badam):
             raise ValueError("Cannot use LoRA with GaLore, APOLLO or BAdam together.")
 
-        if self.stage == "mome" and self.finetuning_type != "skinny_mome":
-            raise ValueError("Skinny mome is only good for stage mome")
+        if self.stage == "skinny_mome" and self.finetuning_type != "skinny_mome":
+            raise ValueError("Skinny mome is only good for stage skinny mome")
 
         if int(self.use_galore) + int(self.use_apollo) + (self.use_badam) > 1:
             raise ValueError("Cannot use GaLore, APOLLO or BAdam together.")
