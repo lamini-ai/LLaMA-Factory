@@ -322,7 +322,7 @@ def _setup_mome_tuning(
         if finetuning_args.use_llama_pro: # still expanding to llama pro
             target_modules = find_expanded_modules(model, target_modules, finetuning_args.freeze_trainable_layers)
 
-        #patch on mome component
+        #todo: patch on modified-mome component
         target_modules = patch_target_modules(model, finetuning_args, target_modules)
 
         if (
