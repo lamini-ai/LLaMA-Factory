@@ -491,7 +491,7 @@ class FinetuningArguments(
         if self.train_mm_proj_only and self.finetuning_type != "full":
             raise ValueError("`train_mm_proj_only` is only valid for full training.")
 
-        if self.finetuning_type != "lora":
+        if self.finetuning_type not in ["lora","skinny_mome"]:
             if self.loraplus_lr_ratio is not None:
                 raise ValueError("`loraplus_lr_ratio` is only valid for LoRA training.")
 
