@@ -113,7 +113,7 @@ class MultiModalDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
             fake_messages = [{"role": "user", "content": IMAGE_PLACEHOLDER}]
             fake_images = [Image.new("RGB", (64, 64), (255, 255, 255))]
             fake_messages = self.template.mm_plugin.process_messages(
-                fake_messages, fake_images, [], [], self.processor
+                fake_messages, fake_images, [], [], processor=self.processor
             )
             _fake_input_ids = self.tokenizer.encode(fake_messages[0]["content"], add_special_tokens=False)
             _fake_input_ids, _ = self.template.mm_plugin.process_token_ids(
@@ -129,7 +129,7 @@ class MultiModalDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
             fake_messages = [{"role": "user", "content": AUDIO_PLACEHOLDER}]
             fake_audios = [np.zeros(1600)]
             fake_messages = self.template.mm_plugin.process_messages(
-                fake_messages, [], [], fake_audios, self.processor
+                fake_messages, [], [], fake_audios, processor=self.processor
             )
             _fake_input_ids = self.tokenizer.encode(fake_messages[0]["content"], add_special_tokens=False)
             _fake_input_ids, _ = self.template.mm_plugin.process_token_ids(

@@ -45,8 +45,8 @@ def _encode_supervised_example(
     train_on_prompt: bool,
     mask_history: bool,
 ) -> Tuple[List[int], List[int]]:
-    messages = template.mm_plugin.process_messages(prompt + response, images, videos, processor)
-    input_ids, labels = template.mm_plugin.process_token_ids([], [], images, videos, tokenizer, processor)
+    messages = template.mm_plugin.process_messages(prompt + response, images, videos,[], processor)
+    input_ids, labels = template.mm_plugin.process_token_ids([], [], images, videos,[], tokenizer, processor)
     encoded_pairs = template.encode_multiturn(tokenizer, messages, system, tools)
     total_length = len(input_ids) + (1 if template.efficient_eos else 0)
     if mask_history:
