@@ -460,7 +460,7 @@ class FinetuningArguments(
         self.find_skinny_mome_modules = self.find_skinny_mome_modules
         self.use_ref_model = self.stage == "dpo" and self.pref_loss not in ["orpo", "simpo"]
 
-        assert self.finetuning_type in ["lora", "freeze", "full", "mome"], "Invalid fine-tuning method."
+        assert self.finetuning_type in ["lora", "freeze", "full", "skinny_mome"], "Invalid fine-tuning method."
         assert self.ref_model_quantization_bit in [None, 8, 4], "We only accept 4-bit or 8-bit quantization."
         assert self.reward_model_quantization_bit in [None, 8, 4], "We only accept 4-bit or 8-bit quantization."
 
