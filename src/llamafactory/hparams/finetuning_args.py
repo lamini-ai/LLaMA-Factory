@@ -397,8 +397,8 @@ class FinetuningArguments(
         default=False,
         metadata={"help": "Whether or not to train model in purely bf16 precision (without AMP)."},
     )
-    stage: Literal["pt", "sft", "rm", "ppo", "dpo", "kto", "mome"] = field(
-        default="mome",
+    stage: Literal["pt", "sft", "rm", "ppo", "dpo", "kto", "skinny_mome"] = field(
+        default="skinny_mome",
         metadata={"help": "Which stage will be performed in training."},
     )
     finetuning_type: Literal["lora", "freeze", "full", "skinny_mome"] = field(
