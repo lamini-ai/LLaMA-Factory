@@ -405,7 +405,7 @@ class FinetuningArguments(
         default="sft",
         metadata={"help": "Which stage will be performed in training."},
     )
-    finetuning_type: Literal["lora", "freeze", "full"] = field(
+    finetuning_type: Literal["lora", "freeze", "full", "mome"] = field(
         default="lora",
         metadata={"help": "Which fine-tuning method to use."},
     )
