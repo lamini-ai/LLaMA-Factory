@@ -2,11 +2,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
-from typing import Optional, Tuple, Dict
+from typing import Optional, Tuple, Any
 
 from .mome_index import LaminiIndex
-from lamini_ml.mome.model_definition.constants import get_hidden_size
+from .utils import infer_attention_embed_dim
 from peft.tuners.tuners_utils import BaseTunerLayer
+
+from peft.tuners.lora.layer import Linear, MultiheadAttention
 
 
 class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
@@ -23,7 +25,7 @@ class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
         base_layer: nn.Module,
         adapter_name: str,
         r: int = 0,
-        index_k: int = 5,
+        index_k: int = 8,
         index: Optional[LaminiIndex] = None,
         **kwargs,
     ):
@@ -46,7 +48,7 @@ class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
         # Initialize adapter
         if r > 0:
             self._active_adapter = adapter_name
-            self.update_layer(adapter_name, r, index, index_k)
+            self.update_layer(adapter_name, r, index)
         else:
             self._active_adapter = None
 
@@ -54,8 +56,7 @@ class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
         self,
         adapter_name: str,
         r: int,
-        index: LaminiIndex,
-        index_k: int,
+        index: Optional[LaminiIndex] = None,
     ) -> None:
         """
         Dynamically creates LoRA projections and stores a LaminiIndex for the adapter.
@@ -64,10 +65,9 @@ class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
             adapter_name: Name of the adapter.
             r: LoRA rank.
             index: LaminiIndex instance with trainable `keys` and `values`.
-            index_k: Number of nearest neighbors to retrieve (used for attention windowing).
         """
-        hidden_size = get_hidden_size(self.base_layer)
-        index_dimension = index.embedding_dim
+        hidden_size = infer_attention_embed_dim(self.base_layer)
+        index_dimension = index.embedding_dimension
 
         # Query projections
         self.query_in[adapter_name] = nn.Linear(hidden_size, r, bias=False)
@@ -78,9 +78,13 @@ class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
         self.value_out[adapter_name] = nn.Linear(r, hidden_size, bias=False)
 
         # Store LaminiIndex as an adapter layer
-        self.index[adapter_name] = index
+        if index is None:
+            # TODO: How to get the dataset name?
+            self.index[adapter_name] = LaminiIndex(dataset_name)
+        else:
+            self.index[adapter_name] = index
 
-        # Initialize weights
+        # TODO: Explore more initialization methods
         nn.init.kaiming_uniform_(self.query_in[adapter_name].weight, a=torch.sqrt(torch.tensor(5)))
         nn.init.zeros_(self.query_out[adapter_name].weight)
 
@@ -126,7 +130,7 @@ class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
         )
 
         # Retrieve key/value from LaminiIndex
-        key, value = self._get_key_value_from_index(query, active_adapter)
+        key, value = self.index[active_adapter](query, self.index_k)
 
         # Compute attention with retrieved key/value
         mome_attention = F.scaled_dot_product_attention(
@@ -147,26 +151,6 @@ class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
 
         return (combined_output,) + base_output[1:] if isinstance(base_output, tuple) else combined_output
 
-    def _get_key_value_from_index(self, query: Tensor, adapter_name: str) -> Tuple[Tensor, Tensor]:
-        """
-        Retrieve top-k key/value from the index using soft dot product attention.
-        """
-        b, s, d = query.shape
-        index = self.index[adapter_name]
-
-        # Reshape query to (b * s, d)
-        query_flat = query.view(b * s, -1)
-
-        # Compute similarity with all keys in the index
-        with torch.no_grad():
-            attn_weights = torch.matmul(query_flat, index.keys.t())
-            _, top_indices = torch.topk(attn_weights, k=self.index_k, dim=-1)
-
-        # Flatten indices for gather
-        flat_indices = top_indices.view(-1)
-
-        # Gather top-k key/value embeddings
-        key = index.keys[flat_indices].view(b, self.index_k * s, -1)
-        value = index.values[flat_indices].view(b, self.index_k * s, -1)
-
-        return key, value
+    def __repr__(self) -> str:
+        rep = super().__repr__()
+        return "momeattn." + rep

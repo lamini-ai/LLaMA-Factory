@@ -29,7 +29,7 @@ from .model_utils.misc import find_all_linear_modules, find_expanded_modules
 from .model_utils.quantization import QuantizationMethod
 from .model_utils.unsloth import get_unsloth_peft_model, load_unsloth_peft_model
 from .model_utils.visual import get_forbidden_modules, patch_target_modules
-from .mome.utils import _setup_mome_tuning
+from .mome.mome_interface import _setup_mome_tuning
 
 if TYPE_CHECKING:
     from transformers import PretrainedConfig, PreTrainedModel
