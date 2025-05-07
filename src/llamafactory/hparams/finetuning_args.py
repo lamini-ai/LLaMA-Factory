@@ -13,8 +13,8 @@
 # limitations under the License.
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Literal, Optional
-
+from typing import Any, Dict, List, Literal, Optional, Union
+from datasets import Dataset, DatasetDict, IterableDataset
 
 @dataclass
 class FreezeArguments:
@@ -390,8 +390,39 @@ class SwanLabArguments:
 
 
 @dataclass
+class MomeArguments:
+    use_mome: bool = field(
+        default=False,
+        metadata={"help": "Whether or not to use the MOME Adapter."},
+    )
+    index_k: int = field(
+        default=8,
+        metadata={"help": "The number of memory entries to select per query."},
+    )
+    sentence_transformer_cache_dir: Optional[str] = field(
+        default=None,
+        metadata={"help": "The directory to cache the sentence transformer."},
+    )
+    sentence_transformer_name: Optional[str] = field(
+        default="sentence-transformers/all-MiniLM-L6-v2",
+        metadata={"help": "The name of the sentence transformer."},
+    )
+    sentence_transformer_dim: Optional[str] = field(
+        default=384,
+        metadata={"help": "The dimension of the sentence transformer."},
+    )
+    sentence_transformer_batch_size: Optional[int] = field(
+        default=32,
+        metadata={"help": "The batch size for the sentence transformer."},
+    )
+    # dataset_ref_for_mome: Optional[Union[Dataset, DatasetDict, IterableDataset]] = field(
+    #     default=None,
+    #     metadata={"help": "The dataset to use for the MOME Adapter."},
+    # )
+    
+@dataclass
 class FinetuningArguments(
-    SwanLabArguments, BAdamArgument, ApolloArguments, GaloreArguments, RLHFArguments, LoraArguments, FreezeArguments
+    SwanLabArguments, BAdamArgument, ApolloArguments, GaloreArguments, RLHFArguments, LoraArguments, FreezeArguments, MomeArguments
 ):
     r"""
     Arguments pertaining to which techniques we are going to fine-tuning with.

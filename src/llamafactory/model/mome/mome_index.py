@@ -2,112 +2,104 @@ from sentence_transformers import SentenceTransformer
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Optional, Tuple, Iterator
+from typing import Iterable, Optional, Tuple, Iterator
 import logging
 from itertools import islice
-
-from .constants import EMBEDDING_MODEL_NAME, SENTENCE_TRANSFORMER_DIM
 
 logger = logging.getLogger(__name__)
 
 class LaminiIndex(nn.Module):
-    """
-    A differentiable index that uses soft attention over key/value embeddings.
-    Embeddings are initialized using the input dataset.
-    Dataset is processed in batches to prevent GPU OOM.
-    The number of embeddings is determined by the length of the dataset.
-    """
-
-    def __init__(
-        self,
-        dataset: Iterator[str],
-        embedding_model_name: str = EMBEDDING_MODEL_NAME,
-        cache_dir: Optional[str] = None,
-        batch_size: int = 32,
-    ):
+    def __init__(self):
         """
-        Initialize a differentiable key/value memory bank using the given dataset.
-
-        Args:
-            dataset (Iterator[str]): Iterable of text examples (assumed to be finite).
-            embedding_model_name (str): Name of the Sentence Transformer model.
-            cache_dir (Optional[str]): Directory to cache the embedding model.
-            batch_size (int): Batch size for GPU memory efficiency and OOM prevention.
+        Initialize an empty LaminiIndex. Must call `.initialize()` before use.
         """
         super().__init__()
+        self.embedding_model = None
+        self.embedding_dimension = None
+        self.num_embeddings = None
+        self.keys = None
+        self.values = None
 
-        # Load the sentence transformer model
-        self.embedding_model = SentenceTransformer(embedding_model_name, cache_folder=cache_dir)
+    def initialize(
+        self,
+        dataset: Iterator[str],
+        index_k: int,
+        sentence_transformer_name: str,
+        sentence_transformer_dim: str,
+        cache_dir: Optional[str] = None,
+        sentence_transformer_batch_size: int = 32,
+    ):
+        """
+        Initialize the embedding model and key/value memory with dataset.
+
+        Args:
+            dataset (Iterator[str]): Iterable of text examples.
+            sentence_transformer_name (str): Name of the Sentence Transformer model.
+            sentence_transformer_dim (str): Dimension of the Sentence Transformer model.
+            cache_dir (Optional[str]): Directory to cache the embedding model.
+            sentence_transformer_batch_size (int): Batch size for GPU memory efficiency and OOM prevention.
+        """
+        self.index_k = index_k
+        logger.info(f"Loading embedding model '{sentence_transformer_name}' from cache_dir={cache_dir}")
+        self.embedding_model = SentenceTransformer(sentence_transformer_name, cache_folder=cache_dir)
+
         self.embedding_dimension = min(
             self.embedding_model.get_sentence_embedding_dimension(),
-            SENTENCE_TRANSFORMER_DIM,
+            sentence_transformer_dim,
         )
+        logger.info(f"Embedding model loaded with dimension {self.embedding_dimension}")
 
-        # Generate embeddings from dataset
-        embeddings = self._generate_embeddings(dataset, batch_size)
+        embeddings = self._generate_embeddings(dataset, sentence_transformer_batch_size)
         self.num_embeddings = embeddings.size(0)
 
-        # Initialize keys and values using these embeddings
         self.keys = nn.Parameter(embeddings.clone())
         self.values = nn.Parameter(embeddings.clone())
 
         logger.info(f"Initialized LaminiIndex with {self.num_embeddings} embeddings of dimension {self.embedding_dimension}")
 
-    def _generate_embeddings(self, dataset: Iterator[str], batch_size: int) -> torch.Tensor:
-        """
-        Generate embeddings from the dataset in batches.
+    def _generate_embeddings(
+        self,
+        dataset: Iterable[str],          # <- works for list OR iterator
+        batch_size: int
+    ) -> torch.Tensor:
 
-        Args:
-            dataset (Iterator[str]): Iterable of text examples.
-            batch_size (int): Batch size for processing.
-
-        Returns:
-            torch.Tensor: Concatenated embeddings tensor.
-        """
-        texts = []
-        batch_count = 0
-        embeddings = []
+        dataset_iter = iter(dataset)     # <‑‑ key change: one iterator
+        embeddings   = []
+        batch_count  = 0
 
         with torch.no_grad():
             while True:
-                try:
-                    # Get a batch of items using islice
-                    batch = list(islice(dataset, batch_size))
-                    if not batch:
-                        break
-
-                    logger.info(f"Encoding batch {batch_count + 1} of approx {len(batch)} texts...")
-
-                    # Encode batch and convert to tensor
-                    batch_embeddings = self.embedding_model.encode(
-                        sentences=batch,
-                        convert_to_tensor=True,
-                        show_progress_bar=False,
-                    )
-
-                    if isinstance(batch_embeddings, torch.Tensor):
-                        embeddings.append(batch_embeddings)
-                    else:
-                        # Fallback if encode returns a numpy array or other
-                        embeddings.append(torch.tensor(batch_embeddings))
-
-                    texts.extend(batch)
-                    batch_count += 1
-
-                except StopIteration:
+                batch = list(islice(dataset_iter, batch_size))
+                if not batch:            # dataset exhausted – we’re done
                     break
 
-        if not texts:
-            raise ValueError("The provided dataset is empty — cannot initialize embeddings.")
+                logger.info(
+                    f"Encoding batch {batch_count + 1} (size={len(batch)})…"
+                )
 
-        # Concatenate all batch embeddings into a single tensor
+                batch_emb = self.embedding_model.encode(
+                    sentences=batch,
+                    convert_to_tensor=True,
+                    show_progress_bar=False,
+                )
+                embeddings.append(
+                    batch_emb
+                    if isinstance(batch_emb, torch.Tensor)
+                    else torch.tensor(batch_emb)
+                )
+                batch_count += 1
+
+        if not embeddings:
+            raise ValueError(
+                "The provided dataset is empty — cannot initialize embeddings."
+            )
+
         return torch.cat(embeddings, dim=0)
 
     
     def forward(
         self,
         query: torch.Tensor,
-        k: int = 8,
         tau: float = 0.5,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -147,7 +139,7 @@ class LaminiIndex(nn.Module):
         )                                            # (B*L, N)
 
         # 4) Take the top k indices, make a "hard" one-hot mask
-        topk_vals, topk_idx = probs.topk(k, dim=-1)        # (B*L, k)
+        topk_vals, topk_idx = probs.topk(self.index_k, dim=-1)        # (B*L, k)
         
         # (B*L, N) multiple one-hot vector 
         hard_mask = torch.zeros_like(probs).scatter_(

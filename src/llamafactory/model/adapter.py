@@ -15,7 +15,7 @@
 import re
 from typing import TYPE_CHECKING
 
-from peft.mapping_func import MODEL_TYPE_TO_PEFT_MODEL_MAPPING
+# from peft.mapping_func import MODEL_TYPE_TO_PEFT_MODEL_MAPPING
 # Patch the PEFT model mapping to include MoME if necessary
 # MODEL_TYPE_TO_PEFT_MODEL_MAPPING["MoME_CAUSAL_LM"] = MoMEPeftModelForCausalLM
 
@@ -298,11 +298,11 @@ def init_adapter(
         _setup_full_tuning(model, finetuning_args, is_trainable, cast_trainable_params_to_fp32)
     elif finetuning_args.finetuning_type == "freeze":
         _setup_freeze_tuning(model, finetuning_args, is_trainable, cast_trainable_params_to_fp32)
-    elif finetuning_args.finetuning_type == "lora":
+    elif finetuning_args.finetuning_type == "lora" and not finetuning_args.use_mome:
         model = _setup_lora_tuning(
             config, model, model_args, finetuning_args, is_trainable, cast_trainable_params_to_fp32
         )
-    elif finetuning_args.finetuning_type == "mome":
+    elif finetuning_args.finetuning_type == "lora" and finetuning_args.use_mome:
         model = _setup_mome_tuning(
             config, model, model_args, finetuning_args, is_trainable, cast_trainable_params_to_fp32
         )

@@ -23,6 +23,7 @@ from ...extras.misc import calculate_tps
 from ...extras.ploting import plot_loss
 from ...hparams import ModelArguments
 from ...model import load_model, load_tokenizer
+from ...model.mome.utils import find_and_initialize_mome_adapters
 from ..trainer_utils import create_modelcard_and_push, create_ref_model
 from .trainer import CustomDPOTrainer
 
@@ -65,6 +66,13 @@ def run_dpo(
 
     # Update arguments
     training_args.remove_unused_columns = False  # important for multimodal and pairwise dataset
+
+    if finetuning_args.use_mome:
+        find_and_initialize_mome_adapters(
+            model, 
+            dataset_module=dataset_module, 
+            finetuning_args=finetuning_args, 
+        )
 
     # Initialize our Trainer
     trainer = CustomDPOTrainer(

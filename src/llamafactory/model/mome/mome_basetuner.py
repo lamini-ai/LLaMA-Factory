@@ -1,14 +1,16 @@
+import copy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
-from typing import Optional, Tuple, Any
+from typing import Optional, Tuple, Any, Union
+from datasets import Dataset, DatasetDict, IterableDataset
 
 from .mome_index import LaminiIndex
 from .utils import infer_attention_embed_dim
+from .constants import SENTENCE_TRANSFORMER_NAME, SENTENCE_TRANSFORMER_DIM
 from peft.tuners.tuners_utils import BaseTunerLayer
-
-from peft.tuners.lora.layer import Linear, MultiheadAttention
+# from peft.tuners.lora.layer import Linear, MultiheadAttention
 
 
 class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
@@ -25,17 +27,15 @@ class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
         base_layer: nn.Module,
         adapter_name: str,
         r: int = 0,
-        index_k: int = 8,
-        index: Optional[LaminiIndex] = None,
+        lora_alpha: int = 1,
         **kwargs,
     ):
         super().__init__()
-        BaseTunerLayer.__init__(self, base_layer)
+        BaseTunerLayer.__init__(self)
 
         self.base_layer = base_layer
-        self.r = {}
-        self.scaling = {}
-        self.index_k = index_k
+        self.r = {adapter_name: r}
+        self.scaling = {adapter_name: lora_alpha / r}
         self.index = nn.ModuleDict({})
 
         # LoRA-style projections
@@ -46,17 +46,11 @@ class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
         self.lora_dropout = nn.ModuleDict({})
 
         # Initialize adapter
-        if r > 0:
-            self._active_adapter = adapter_name
-            self.update_layer(adapter_name, r, index)
-        else:
-            self._active_adapter = None
+        self._active_adapter = adapter_name
 
     def update_layer(
         self,
-        adapter_name: str,
-        r: int,
-        index: Optional[LaminiIndex] = None,
+        index_dimension: int,
     ) -> None:
         """
         Dynamically creates LoRA projections and stores a LaminiIndex for the adapter.
@@ -67,36 +61,43 @@ class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
             index: LaminiIndex instance with trainable `keys` and `values`.
         """
         hidden_size = infer_attention_embed_dim(self.base_layer)
-        index_dimension = index.embedding_dimension
+        adapter_name = self._active_adapter
 
         # Query projections
-        self.query_in[adapter_name] = nn.Linear(hidden_size, r, bias=False)
-        self.query_out[adapter_name] = nn.Linear(r, index_dimension, bias=False)
+        self.query_in[adapter_name] = nn.Linear(hidden_size, self.r[adapter_name], bias=False)
+        self.query_out[adapter_name] = nn.Linear(self.r[adapter_name], index_dimension, bias=False)
 
         # Value projections
-        self.value_in[adapter_name] = nn.Linear(index_dimension, r, bias=False)
-        self.value_out[adapter_name] = nn.Linear(r, hidden_size, bias=False)
+        self.value_in[adapter_name] = nn.Linear(index_dimension, self.r[adapter_name], bias=False)
+        self.value_out[adapter_name] = nn.Linear(self.r[adapter_name], hidden_size, bias=False)
 
         # Store LaminiIndex as an adapter layer
-        if index is None:
-            # TODO: How to get the dataset name?
-            self.index[adapter_name] = LaminiIndex(dataset_name)
-        else:
-            self.index[adapter_name] = index
+        self.index[adapter_name] = LaminiIndex()
 
         # TODO: Explore more initialization methods
-        nn.init.kaiming_uniform_(self.query_in[adapter_name].weight, a=torch.sqrt(torch.tensor(5)))
+        nn.init.kaiming_uniform_(self.query_in[adapter_name].weight)
         nn.init.zeros_(self.query_out[adapter_name].weight)
 
-        nn.init.kaiming_uniform_(self.value_in[adapter_name].weight, a=torch.sqrt(torch.tensor(5)))
+        nn.init.kaiming_uniform_(self.value_in[adapter_name].weight)
         nn.init.zeros_(self.value_out[adapter_name].weight)
-
-        # Scaling by rank
-        self.scaling[adapter_name] = r
-        self.r[adapter_name] = r
 
         # Register adapter as active
         self.set_adapter([adapter_name])
+
+    def set_prebuilt_index(self, index: LaminiIndex):
+        adapter_name = self._active_adapter[0] if isinstance(self._active_adapter, list) else self._active_adapter
+        self.index[adapter_name] = copy.deepcopy(index)
+
+    def initialize_index(self, 
+                         dataset: Union[Dataset, DatasetDict, IterableDataset],
+                         index_k: int,
+                         sentence_transformer_name: str = SENTENCE_TRANSFORMER_NAME,
+                         sentence_transformer_dim: str = SENTENCE_TRANSFORMER_DIM,
+                         cache_dir: Optional[str] = None,
+                         sentence_transformer_batch_size: int = 32):
+        adapter_name = self._active_adapter[0] if isinstance(self._active_adapter, list) else self._active_adapter
+        self.index[adapter_name].initialize(
+            dataset, index_k, sentence_transformer_name, sentence_transformer_dim, cache_dir, sentence_transformer_batch_size)
 
     def forward(
         self,
@@ -127,18 +128,21 @@ class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
         # Projection via LoRA
         query = self.query_out[active_adapter](
             self.query_in[active_adapter](hidden_states)
-        )
+        ) * self.scaling[active_adapter]
 
         # Retrieve key/value from LaminiIndex
-        key, value = self.index[active_adapter](query, self.index_k)
+        key, value = self.index[active_adapter](query)
 
         # Compute attention with retrieved key/value
-        mome_attention = F.scaled_dot_product_attention(
+        # pylint: disable=not-callable
+        mome_attention = torch.nn.functional.scaled_dot_product_attention(
             query=query,
             key=key,
             value=value,
-            attn_mask=attention_mask,
-            is_causal=True
+            # attn_mask=attention_mask,
+            dropout_p=0.1,
+            is_causal=True,
+            scale=None
         )
 
         # Final value projection

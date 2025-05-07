@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, List, Optional
 from ...data import MultiModalDataCollatorForSeq2Seq, get_dataset, get_template_and_fix_tokenizer
 from ...extras.ploting import plot_loss
 from ...model import load_model, load_tokenizer
+from ...model.mome.utils import find_and_initialize_mome_adapters
 from ..callbacks import fix_valuehead_checkpoint
 from ..trainer_utils import create_ref_model, create_reward_model
 from .trainer import CustomPPOTrainer
@@ -51,6 +52,13 @@ def run_ppo(
     # Create reference model and reward model
     ref_model = create_ref_model(model_args, finetuning_args, add_valuehead=True)
     reward_model = create_reward_model(model, model_args, finetuning_args)
+
+    if finetuning_args.use_mome:
+        find_and_initialize_mome_adapters(
+            model, 
+            dataset_module=dataset_module, 
+            finetuning_args=finetuning_args, 
+        )
 
     # Initialize our Trainer
     ppo_trainer: "CustomPPOTrainer" = CustomPPOTrainer(

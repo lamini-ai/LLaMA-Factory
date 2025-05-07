@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, List, Optional
 from ...data import PairwiseDataCollatorWithPadding, get_dataset, get_template_and_fix_tokenizer
 from ...extras.ploting import plot_loss
 from ...model import load_model, load_tokenizer
+from ...model.mome.utils import find_and_initialize_mome_adapters
 from ..callbacks import fix_valuehead_checkpoint
 from ..trainer_utils import create_modelcard_and_push
 from .metric import ComputeAccuracy
@@ -50,6 +51,13 @@ def run_rm(
 
     # Update arguments
     training_args.remove_unused_columns = False  # important for multimodal and pairwise dataset
+
+    if finetuning_args.use_mome:
+        find_and_initialize_mome_adapters(
+            model, 
+            dataset_module=dataset_module, 
+            finetuning_args=finetuning_args, 
+        )
 
     # Initialize our Trainer
     trainer = PairwiseTrainer(

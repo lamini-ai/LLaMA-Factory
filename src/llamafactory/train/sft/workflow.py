@@ -23,6 +23,7 @@ from ...extras.logging import get_logger
 from ...extras.misc import calculate_tps, get_logits_processor
 from ...extras.ploting import plot_loss
 from ...model import load_model, load_tokenizer
+from ...model.mome.utils import find_and_initialize_mome_adapters
 from ..trainer_utils import create_modelcard_and_push
 from .metric import ComputeAccuracy, ComputeSimilarity, eval_logit_processor
 from .trainer import CustomSeq2SeqTrainer
@@ -83,6 +84,13 @@ def run_sft(
     gen_kwargs["eos_token_id"] = [tokenizer.eos_token_id] + tokenizer.additional_special_tokens_ids
     gen_kwargs["pad_token_id"] = tokenizer.pad_token_id
     gen_kwargs["logits_processor"] = get_logits_processor()
+
+    if finetuning_args.use_mome:
+        find_and_initialize_mome_adapters(
+            model, 
+            dataset_module=dataset_module, 
+            finetuning_args=finetuning_args, 
+        )
 
     # Initialize our Trainer
     trainer = CustomSeq2SeqTrainer(
