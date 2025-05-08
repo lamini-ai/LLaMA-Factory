@@ -47,7 +47,6 @@ sentence_transformer_name: all-MiniLM-L6-v2
 sentence_transformer_dim: 384
 sentence_transformer_cache_dir: null
 sentence_transformer_batch_size: 32
-# additional_target: self_attn
 
 ### eval
 # eval_dataset: alpaca_en_demo

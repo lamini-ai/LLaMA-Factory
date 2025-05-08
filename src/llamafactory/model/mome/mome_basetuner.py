@@ -19,8 +19,8 @@ class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
     This enables dynamic key/value retrieval and backpropagation into the index embeddings.
     """
 
-    adapter_layer_names = ("query_in", "query_out", "value_in", "value_out", "index")
-    other_param_names = ("r", "scaling")
+    adapter_layer_names = ("lora_attn_query_in", "lora_attn_query_out", "lora_attn_value_in", "lora_attn_value_out", "lora_attn_index")
+    other_param_names = ("r", "lora_attn_scaling")
 
     def __init__(
         self,
@@ -35,15 +35,15 @@ class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
 
         self.base_layer = base_layer
         self.r = {adapter_name: r}
-        self.scaling = {adapter_name: lora_alpha / r}
-        self.index = nn.ModuleDict({})
+        self.lora_attn_scaling = {adapter_name: lora_alpha / r}
+        self.lora_attn_index = nn.ModuleDict({})
 
         # LoRA-style projections
-        self.query_in = nn.ModuleDict({})
-        self.query_out = nn.ModuleDict({})
-        self.value_in = nn.ModuleDict({})
-        self.value_out = nn.ModuleDict({})
-        self.lora_dropout = nn.ModuleDict({})
+        self.lora_attn_query_in = nn.ModuleDict({})
+        self.lora_attn_query_out = nn.ModuleDict({})
+        self.lora_attn_value_in = nn.ModuleDict({})
+        self.lora_attn_value_out = nn.ModuleDict({})
+        self.lora_attn_dropout = nn.ModuleDict({})
 
         # Initialize adapter
         self._active_adapter = adapter_name
@@ -64,27 +64,27 @@ class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
         adapter_name = self._active_adapter
 
         # Query projections
-        self.query_in[adapter_name] = nn.Linear(hidden_size, self.r[adapter_name], bias=False)
-        self.query_out[adapter_name] = nn.Linear(self.r[adapter_name], index_dimension, bias=False)
+        self.lora_attn_query_in[adapter_name] = nn.Linear(hidden_size, self.r[adapter_name], bias=False)
+        self.lora_attn_query_out[adapter_name] = nn.Linear(self.r[adapter_name], index_dimension, bias=False)
 
         # Value projections
-        self.value_in[adapter_name] = nn.Linear(index_dimension, self.r[adapter_name], bias=False)
-        self.value_out[adapter_name] = nn.Linear(self.r[adapter_name], hidden_size, bias=False)
+        self.lora_attn_value_in[adapter_name] = nn.Linear(index_dimension, self.r[adapter_name], bias=False)
+        self.lora_attn_value_out[adapter_name] = nn.Linear(self.r[adapter_name], hidden_size, bias=False)
 
         # Placeholder for index, will call initialize_index_from_prebuilt_index() later
-        self.index[adapter_name] = None
+        self.lora_attn_index[adapter_name] = None
 
         # TODO: Explore more initialization methods
-        nn.init.kaiming_uniform_(self.query_in[adapter_name].weight)
-        nn.init.zeros_(self.query_out[adapter_name].weight)
+        nn.init.kaiming_uniform_(self.lora_attn_query_in[adapter_name].weight)
+        nn.init.zeros_(self.lora_attn_query_out[adapter_name].weight)
 
-        nn.init.kaiming_uniform_(self.value_in[adapter_name].weight)
-        nn.init.zeros_(self.value_out[adapter_name].weight)
+        nn.init.kaiming_uniform_(self.lora_attn_value_in[adapter_name].weight)
+        nn.init.zeros_(self.lora_attn_value_out[adapter_name].weight)
 
 
     def initialize_index_from_prebuilt_index(self, index: LaminiIndex):
         adapter_name = self._active_adapter[0] if isinstance(self._active_adapter, list) else self._active_adapter
-        self.index[adapter_name] = index.clone_with_shared_keys()
+        self.lora_attn_index[adapter_name] = index.clone_with_shared_keys()
         
         # Register adapter as active
         self.set_adapter([adapter_name])
@@ -97,7 +97,7 @@ class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
                          cache_dir: Optional[str] = None,
                          sentence_transformer_batch_size: int = 32):
         adapter_name = self._active_adapter[0] if isinstance(self._active_adapter, list) else self._active_adapter
-        self.index[adapter_name].initialize(
+        self.lora_attn_index[adapter_name].initialize(
             dataset, index_k, sentence_transformer_name, sentence_transformer_dim, cache_dir, sentence_transformer_batch_size)
         
         # Register adapter as active
@@ -126,16 +126,16 @@ class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
         base_output_tensor = base_output[0] if isinstance(base_output, tuple) else base_output
         active_adapter = self.active_adapter[0] if isinstance(self.active_adapter, list) else self.active_adapter
 
-        if not active_adapter or active_adapter not in self.query_in:
+        if not active_adapter or active_adapter not in self.lora_attn_query_in:
             return base_output
 
         # Projection via LoRA
-        query = self.query_out[active_adapter](
-            self.query_in[active_adapter](hidden_states)
-        ) * self.scaling[active_adapter]
+        query = self.lora_attn_query_out[active_adapter](
+            self.lora_attn_query_in[active_adapter](hidden_states)
+        ) * self.lora_attn_scaling[active_adapter]
 
         # Retrieve key/value from LaminiIndex
-        key, value = self.index[active_adapter](query)
+        key, value = self.lora_attn_index[active_adapter](query)
 
         # Compute attention with retrieved key/value
         # pylint: disable=not-callable
@@ -150,9 +150,9 @@ class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
         )
 
         # Final value projection
-        mome_value_proj = self.value_out[active_adapter](
-            self.value_in[active_adapter](mome_attention)
-        ) * self.scaling[active_adapter]
+        mome_value_proj = self.lora_attn_value_out[active_adapter](
+            self.lora_attn_value_in[active_adapter](mome_attention)
+        ) * self.lora_attn_scaling[active_adapter]
 
         # Combine base and MoME attention outputs
         combined_output = base_output_tensor + mome_value_proj

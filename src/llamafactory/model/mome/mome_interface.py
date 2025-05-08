@@ -163,7 +163,6 @@ def _setup_mome_tuning(
                 inference_mode=False,
                 **peft_kwargs,
             )
-            # TODO: Add support for MoMEAttentionAdaptor 
             lora_config._register_custom_module({LlamaAttention: MoMEAttentionAdaptor})
             
             model = get_peft_model(model, lora_config)
