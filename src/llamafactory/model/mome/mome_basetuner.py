@@ -71,8 +71,8 @@ class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
         self.value_in[adapter_name] = nn.Linear(index_dimension, self.r[adapter_name], bias=False)
         self.value_out[adapter_name] = nn.Linear(self.r[adapter_name], hidden_size, bias=False)
 
-        # Store LaminiIndex as an adapter layer
-        self.index[adapter_name] = LaminiIndex()
+        # Placeholder for index, will call initialize_index_from_prebuilt_index() later
+        self.index[adapter_name] = None
 
         # TODO: Explore more initialization methods
         nn.init.kaiming_uniform_(self.query_in[adapter_name].weight)
@@ -81,12 +81,13 @@ class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
         nn.init.kaiming_uniform_(self.value_in[adapter_name].weight)
         nn.init.zeros_(self.value_out[adapter_name].weight)
 
+
+    def initialize_index_from_prebuilt_index(self, index: LaminiIndex):
+        adapter_name = self._active_adapter[0] if isinstance(self._active_adapter, list) else self._active_adapter
+        self.index[adapter_name] = index.clone_with_shared_keys()
+        
         # Register adapter as active
         self.set_adapter([adapter_name])
-
-    def set_prebuilt_index(self, index: LaminiIndex):
-        adapter_name = self._active_adapter[0] if isinstance(self._active_adapter, list) else self._active_adapter
-        self.index[adapter_name] = copy.deepcopy(index)
 
     def initialize_index(self, 
                          dataset: Union[Dataset, DatasetDict, IterableDataset],
@@ -98,6 +99,9 @@ class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
         adapter_name = self._active_adapter[0] if isinstance(self._active_adapter, list) else self._active_adapter
         self.index[adapter_name].initialize(
             dataset, index_k, sentence_transformer_name, sentence_transformer_dim, cache_dir, sentence_transformer_batch_size)
+        
+        # Register adapter as active
+        self.set_adapter([adapter_name])
 
     def forward(
         self,

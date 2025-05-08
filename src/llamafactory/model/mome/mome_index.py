@@ -1,92 +1,159 @@
+import threading
 from sentence_transformers import SentenceTransformer
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Iterable, Optional, Tuple, Iterator
+from typing import Iterable, Optional, Tuple
 import logging
 from itertools import islice
 
 logger = logging.getLogger(__name__)
 
 class LaminiIndex(nn.Module):
+
+
+    _shared_keys: Optional[nn.Parameter] = None     # the one true key matrix
+    _shared_dim: Optional[int] = None              # D, used for sanity checks
+    _init_lock = threading.Lock()                  # protects first-time creation
+    
     def __init__(self):
         """
         Initialize an empty LaminiIndex. Must call `.initialize()` before use.
         """
         super().__init__()
-        self.embedding_model = None
-        self.embedding_dimension = None
-        self.num_embeddings = None
-        self.keys = None
-        self.values = None
+        self.embedding_model: Optional[SentenceTransformer] = None
+        self.embedding_dimension: Optional[int] = None
+        self.num_embeddings: Optional[int] = None
+        # keys will be registered later
+        self.values: Optional[nn.Parameter] = None
+        self.index_k: Optional[int] = None
 
     def initialize(
         self,
-        dataset: Iterator[str],
+        dataset: Iterable[str],
         index_k: int,
         sentence_transformer_name: str,
-        sentence_transformer_dim: str,
+        sentence_transformer_dim: int,
         cache_dir: Optional[str] = None,
         sentence_transformer_batch_size: int = 32,
-    ):
+        device: Optional[torch.device] = None,
+    ) -> None:
         """
-        Initialize the embedding model and key/value memory with dataset.
+        Build (or re-use) the key matrix and create a trainable value table.
 
-        Args:
-            dataset (Iterator[str]): Iterable of text examples.
-            sentence_transformer_name (str): Name of the Sentence Transformer model.
-            sentence_transformer_dim (str): Dimension of the Sentence Transformer model.
-            cache_dir (Optional[str]): Directory to cache the embedding model.
-            sentence_transformer_batch_size (int): Batch size for GPU memory efficiency and OOM prevention.
+        Args
+        ----
+        dataset : iterable of strings        – used only the first time
+        index_k : int                        – top-k neighbours at query time
+        sentence_transformer_name : str      – HF model id
+        sentence_transformer_dim : int       – cap key dimension (≤ model dim)
+        cache_dir : str or None              – local cache for HF models
+        sentence_transformer_batch_size : int
+        device : torch.device or None        – defaults to current CUDA or CPU
         """
         self.index_k = index_k
-        logger.info(f"Loading embedding model '{sentence_transformer_name}' from cache_dir={cache_dir}")
-        self.embedding_model = SentenceTransformer(sentence_transformer_name, cache_folder=cache_dir)
+        device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        self.embedding_dimension = min(
-            self.embedding_model.get_sentence_embedding_dimension(),
-            sentence_transformer_dim,
+        # ------------------------------------------------------------------ #
+        # 1. Build shared keys once, protected by a lock
+        # ------------------------------------------------------------------ #
+        with LaminiIndex._init_lock:
+            if LaminiIndex._shared_keys is None:
+                logger.info("Building shared LaminiIndex keys …")
+
+                st_model = SentenceTransformer(sentence_transformer_name,
+                                               cache_folder=cache_dir)
+                model_dim = st_model.get_sentence_embedding_dimension()
+                self.embedding_dimension = min(model_dim, sentence_transformer_dim)
+
+                # encode full dataset → tensor [N, D]
+                embeddings = self._generate_embeddings(
+                    st_model, dataset, sentence_transformer_batch_size
+                )[:, : self.embedding_dimension]            # trim if needed
+                LaminiIndex._shared_keys = nn.Parameter(
+                    embeddings.to(device), requires_grad=False
+                )
+                LaminiIndex._shared_dim = self.embedding_dimension
+                self.num_embeddings = embeddings.size(0)
+
+                logger.info(
+                    f"Shared keys created: {self.num_embeddings} × "
+                    f"{self.embedding_dimension} on {device}"
+                )
+            else:
+                # sanity-check dimension consistency
+                if sentence_transformer_dim != LaminiIndex._shared_dim:
+                    raise ValueError(
+                        "LaminiIndex: attempted to create a second key matrix "
+                        f"with dim={sentence_transformer_dim}, "
+                        f"but existing shared dim={LaminiIndex._shared_dim}."
+                    )
+                self.embedding_dimension = LaminiIndex._shared_dim
+                self.num_embeddings = LaminiIndex._shared_keys.size(0)
+                logger.info("↪  Re-using cached LaminiIndex keys")
+
+        # ------------------------------------------------------------------ #
+        # 2.  Register the (shared) keys in *this* sub-module
+        # ------------------------------------------------------------------ #
+        # If you *never* want keys to appear in the optimizer, use register_buffer.
+        self.register_parameter("keys", LaminiIndex._shared_keys)
+
+        # ------------------------------------------------------------------ #
+        # 3.  Each instance gets its own trainable value matrix
+        # ------------------------------------------------------------------ #
+        self.values = nn.Parameter(
+            LaminiIndex._shared_keys.data.clone(), requires_grad=True
         )
-        logger.info(f"Embedding model loaded with dimension {self.embedding_dimension}")
+        logger.info(
+            f"Initialized LaminiIndex instance — values trainable, "
+            f"keys shared (id={id(LaminiIndex._shared_keys)})"
+        )
 
-        embeddings = self._generate_embeddings(dataset, sentence_transformer_batch_size)
-        self.num_embeddings = embeddings.size(0)
+    def clone_with_shared_keys(self) -> "LaminiIndex":
+        """
+        Return a new LaminiIndex that *reuses* the class-level _shared_keys
+        tensor but clones its trainable `values`.
+        """
+        new = LaminiIndex()
+        # metadata
+        new.embedding_dimension = self.embedding_dimension
+        new.num_embeddings      = self.num_embeddings
+        new.index_k             = self.index_k
 
-        self.keys = nn.Parameter(embeddings.clone())
-        self.values = nn.Parameter(embeddings.clone())
+        # tie the frozen key parameter
+        new.register_parameter("keys", LaminiIndex._shared_keys)
 
-        logger.info(f"Initialized LaminiIndex with {self.num_embeddings} embeddings of dimension {self.embedding_dimension}")
+        # give it its own value table
+        new.values = nn.Parameter(self.values.data.clone(), requires_grad=True)
+        return new
 
     def _generate_embeddings(
         self,
-        dataset: Iterable[str],          # <- works for list OR iterator
+        st_model: SentenceTransformer,
+        dataset: Iterable[str],
         batch_size: int
     ) -> torch.Tensor:
 
-        dataset_iter = iter(dataset)     # <‑‑ key change: one iterator
+        dataset_iter = iter(dataset)
         embeddings   = []
         batch_count  = 0
 
         with torch.no_grad():
             while True:
-                batch = list(islice(dataset_iter, batch_size))
-                if not batch:            # dataset exhausted – we’re done
+                chunk = list(islice(dataset_iter, batch_size))
+                if not chunk:
                     break
 
                 logger.info(
-                    f"Encoding batch {batch_count + 1} (size={len(batch)})…"
+                    f"Encoding batch {batch_count + 1} (size={len(chunk)})…"
                 )
 
-                batch_emb = self.embedding_model.encode(
-                    sentences=batch,
+                batch_emb = st_model.encode(
+                    sentences=chunk,
                     convert_to_tensor=True,
                     show_progress_bar=False,
                 )
-                embeddings.append(
-                    batch_emb
-                    if isinstance(batch_emb, torch.Tensor)
-                    else torch.tensor(batch_emb)
-                )
+                embeddings.append(batch_emb)
                 batch_count += 1
 
         if not embeddings:
