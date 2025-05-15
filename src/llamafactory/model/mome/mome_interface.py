@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING, List
 
 import torch
-from peft import LoraConfig, PeftModel, TaskType, get_peft_model
+from peft import PEFT_TYPE_TO_CONFIG_MAPPING, LoraConfig, PeftConfig, PeftModel, TaskType, get_peft_model
 from transformers.integrations import is_deepspeed_zero3_enabled
 from transformers.models.llama.modeling_llama import LlamaAttention
 
@@ -22,11 +22,12 @@ logger = logging.get_logger(__name__)
 
 def find_all_memo_target_modules(model: "PreTrainedModel", freeze_vision_tower: bool) -> List[str]:
     r"""
-    Finds all available modules to apply LoRA, GaLore or APOLLO.
+    Finds all available modules to apply LoRyA, GaLore or APOLLO.
     """
     model_type = getattr(model.config, "model_type", None)
     # Includes lm_head
-    forbidden_modules = {"q_proj", "k_proj", "v_proj", "o_proj"} 
+    # forbidden_modules = {"q_proj", "k_proj", "v_proj", "o_proj"} 
+    forbidden_modules = {"q_proj", "k_proj", "v_proj", "o_proj", "base_layer", "self_attn"}
     if model_type == "chatglm":
         forbidden_modules.add("output_layer")
     elif model_type == "internlm2":
@@ -65,7 +66,6 @@ def _setup_mome_tuning(
     adapter_to_resume = None
 
     if model_args.adapter_name_or_path is not None:
-        # TODO: skip this branch for now
         is_mergeable = True
         if getattr(model, "quantization_method", None):  # merge lora in quantized model is unstable
             assert len(model_args.adapter_name_or_path) == 1, "Quantized model only accepts a single adapter."
@@ -94,9 +94,9 @@ def _setup_mome_tuning(
         }
 
         for adapter in adapter_to_merge:
-            # TODO: Add support for MoMEPeftModel
             model: "LoraModel" = PeftModel.from_pretrained(model, adapter, **init_kwargs)
-            model = model.merge_and_unload()
+            # TODO: Fix the merge error
+            # model = model.merge_and_unload()
 
         if len(adapter_to_merge) > 0:
             logger.info_rank0(f"Merged {len(adapter_to_merge)} adapter(s).")
@@ -163,7 +163,12 @@ def _setup_mome_tuning(
                 inference_mode=False,
                 **peft_kwargs,
             )
-            lora_config._register_custom_module({LlamaAttention: MoMEAttentionAdaptor})
+            
+            # TODO: clean up
+            # lora_config._register_custom_module({LlamaAttention: MoMEAttentionAdaptor})
+            # lora_config.index_k = finetuning_args.index_k
+            # lora_config.sentence_transformer_name = finetuning_args.sentence_transformer_name
+            # lora_config.sentence_transformer_dim = finetuning_args.sentence_transformer_dim
             
             model = get_peft_model(model, lora_config)
 

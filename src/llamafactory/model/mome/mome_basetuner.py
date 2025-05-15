@@ -7,12 +7,37 @@ from typing import Optional, Tuple, Any, Union
 from datasets import Dataset, DatasetDict, IterableDataset
 
 from .mome_index import LaminiIndex
-from .utils import infer_attention_embed_dim
 from .constants import SENTENCE_TRANSFORMER_NAME, SENTENCE_TRANSFORMER_DIM
 from peft.tuners.tuners_utils import BaseTunerLayer
 # from peft.tuners.lora.layer import Linear, MultiheadAttention
 
 
+
+def infer_attention_embed_dim(attn_mod: nn.Module) -> int:
+    """
+    Infer the model (token) embedding dimension from a HF attention module.
+    Works for Llama, DeepSeek, Qwen, Gemma, vanilla nn.MultiheadAttention, etc.
+    """
+    # 1) PyTorch nn.MultiheadAttention & some HF ports
+    if hasattr(attn_mod, "embed_dim"):
+        return int(attn_mod.embed_dim)
+
+    # 2) Common across modern HF LLMs (q_proj is an nn.Linear)
+    if hasattr(attn_mod, "q_proj"):
+        return int(attn_mod.q_proj.in_features)
+
+    # 3) Some older/bert‑like blocks use 'query'
+    if hasattr(attn_mod, "query"):
+        return int(attn_mod.query.in_features)
+
+    # 4) Out‑projection is a safe last resort
+    if hasattr(attn_mod, "out_proj"):
+        return int(attn_mod.out_proj.in_features)
+
+    raise AttributeError(
+        f"Cannot locate embed dimension on {attn_mod.__class__.__name__}"
+    )
+    
 class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
     """
     MoMEAttentionAdaptor integrates the base attention layer with soft attention over a trainable index.
@@ -26,8 +51,9 @@ class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
         self,
         base_layer: nn.Module,
         adapter_name: str,
-        r: int = 0,
-        lora_alpha: int = 1,
+        r: int,
+        lora_alpha: int,
+        index_dimension: int,
         **kwargs,
     ):
         super().__init__()
@@ -47,6 +73,8 @@ class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
 
         # Initialize adapter
         self._active_adapter = adapter_name
+        
+        self.update_layer(index_dimension)
 
     def update_layer(
         self,
@@ -72,7 +100,7 @@ class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
         self.lora_attn_value_out[adapter_name] = nn.Linear(self.r[adapter_name], hidden_size, bias=False)
 
         # Placeholder for index, will call initialize_index_from_prebuilt_index() later
-        self.lora_attn_index[adapter_name] = None
+        self.lora_attn_index[adapter_name] = LaminiIndex()
 
         # TODO: Explore more initialization methods
         nn.init.kaiming_uniform_(self.lora_attn_query_in[adapter_name].weight)
@@ -126,6 +154,9 @@ class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
         base_output_tensor = base_output[0] if isinstance(base_output, tuple) else base_output
         active_adapter = self.active_adapter[0] if isinstance(self.active_adapter, list) else self.active_adapter
 
+        # if torch.isnan(base_output_tensor).any():
+        #     raise ValueError("Input base_output contains NaN values")
+        
         if not active_adapter or active_adapter not in self.lora_attn_query_in:
             return base_output
 
@@ -162,3 +193,11 @@ class MoMEAttentionAdaptor(nn.Module, BaseTunerLayer):
     def __repr__(self) -> str:
         rep = super().__repr__()
         return "momeattn." + rep
+    
+    def merge(self, safe_merge: bool = False, adapter_names: Optional[list[str]] = None) -> None:
+        pass
+
+    def unmerge(self) -> None:
+        pass
+    
+    

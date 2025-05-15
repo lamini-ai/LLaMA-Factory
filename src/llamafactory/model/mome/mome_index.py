@@ -21,13 +21,27 @@ class LaminiIndex(nn.Module):
         Initialize an empty LaminiIndex. Must call `.initialize()` before use.
         """
         super().__init__()
-        self.embedding_model: Optional[SentenceTransformer] = None
         self.embedding_dimension: Optional[int] = None
         self.num_embeddings: Optional[int] = None
         # keys will be registered later
         self.values: Optional[nn.Parameter] = None
+        self.keys: Optional[nn.Parameter] = None
         self.index_k: Optional[int] = None
-
+        
+        
+    def initialize_empty_weights(
+        self,
+        index_k: int,
+        sentence_transformer_dim: int,
+        num_experts: int,
+    ) -> None:
+        """
+        Initialize the key matrix and create a trainable value table.
+        """
+        self.index_k = index_k
+        self.keys = nn.Parameter(torch.zeros(num_experts, sentence_transformer_dim), requires_grad=False)
+        self.values = nn.Parameter(torch.zeros(num_experts, sentence_transformer_dim), requires_grad=True)
+        
     def initialize(
         self,
         dataset: Iterable[str],
@@ -96,7 +110,8 @@ class LaminiIndex(nn.Module):
         # 2.  Register the (shared) keys in *this* sub-module
         # ------------------------------------------------------------------ #
         # If you *never* want keys to appear in the optimizer, use register_buffer.
-        self.register_parameter("keys", LaminiIndex._shared_keys)
+        
+        self.keys = nn.Parameter(LaminiIndex._shared_keys.data, requires_grad=False)
 
         # ------------------------------------------------------------------ #
         # 3.  Each instance gets its own trainable value matrix
@@ -121,7 +136,7 @@ class LaminiIndex(nn.Module):
         new.index_k             = self.index_k
 
         # tie the frozen key parameter
-        new.register_parameter("keys", LaminiIndex._shared_keys)
+        new.keys = nn.Parameter(LaminiIndex._shared_keys.data, requires_grad=False)
 
         # give it its own value table
         new.values = nn.Parameter(self.values.data.clone(), requires_grad=True)
@@ -167,7 +182,7 @@ class LaminiIndex(nn.Module):
     def forward(
         self,
         query: torch.Tensor,
-        tau: float = 0.5,
+        tau: float = 1.0,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Gumbel-Softmax + hard Top-k mask differentiable retrieval
@@ -179,6 +194,9 @@ class LaminiIndex(nn.Module):
         Returns:
             key_vectors, value_vectors: (batch, seq_len, D)
         """
+        # if torch.isnan(query).any():
+        #     raise ValueError("Input query contains NaN values")
+        
         B, L, D = query.shape
         q = query.view(B * L, D)                 # (B*L, D)
 

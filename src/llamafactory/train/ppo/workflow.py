@@ -53,11 +53,12 @@ def run_ppo(
     ref_model = create_ref_model(model_args, finetuning_args, add_valuehead=True)
     reward_model = create_reward_model(model, model_args, finetuning_args)
 
-    if finetuning_args.use_mome:
+    if finetuning_args.use_mome and model_args.adapter_name_or_path is None:
         find_and_initialize_mome_adapters(
             model, 
             dataset_module=dataset_module, 
             finetuning_args=finetuning_args, 
+            training_args=training_args,
         )
 
     # Initialize our Trainer

@@ -85,11 +85,12 @@ def run_sft(
     gen_kwargs["pad_token_id"] = tokenizer.pad_token_id
     gen_kwargs["logits_processor"] = get_logits_processor()
 
-    if finetuning_args.use_mome:
+    if finetuning_args.use_mome and model_args.adapter_name_or_path is None:
         find_and_initialize_mome_adapters(
             model, 
             dataset_module=dataset_module, 
             finetuning_args=finetuning_args, 
+            training_args=training_args,
         )
 
     # Initialize our Trainer

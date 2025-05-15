@@ -26,6 +26,8 @@ from transformers import (
 )
 from trl import AutoModelForCausalLMWithValueHead
 
+from llamafactory.model.mome.utils import load_adapter_config_and_wrap_attn, wrap_attn_with_mome
+
 from ..extras import logging
 from ..extras.misc import count_parameters, skip_check_imports, try_download_model_from_other_hub
 from .adapter import init_adapter
@@ -165,6 +167,27 @@ def load_model(
     if not lazy_load:
         patch_model(model, tokenizer, model_args, is_trainable, add_valuehead)
         register_autoclass(config, model, tokenizer)
+
+    if finetuning_args.use_mome:
+        if model_args.adapter_name_or_path is not None:
+            model = load_adapter_config_and_wrap_attn(
+                model = model,
+                adapter_path = model_args.adapter_name_or_path,
+                is_trainable = is_trainable,
+                model_args = model_args,
+                finetuning_args = finetuning_args,
+                adapter_name = "default"
+            )
+        else:
+            model = wrap_attn_with_mome(
+                model = model,
+                adapter_name = "default",
+                r = finetuning_args.lora_rank,
+                lora_alpha = finetuning_args.lora_alpha,
+                index_dimension = finetuning_args.sentence_transformer_dim,
+                wrap_num = None,
+            )
+            
 
     model = init_adapter(config, model, model_args, finetuning_args, is_trainable)
 
