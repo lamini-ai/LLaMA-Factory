@@ -182,7 +182,7 @@ class LaminiIndex(nn.Module):
     def forward(
         self,
         query: torch.Tensor,
-        tau: float = 1.0,
+        tau: float = 2.0,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Gumbel-Softmax + hard Top-k mask differentiable retrieval
@@ -219,9 +219,13 @@ class LaminiIndex(nn.Module):
         #    • Without the noise the model would always
         #      choose the same few keys early on, starving the
         #      rest of the table of gradient updates.
-        probs = F.gumbel_softmax(
-            logits, tau=tau, hard=False, dim=-1
-        )                                            # (B*L, N)
+        
+        # TODO: NaN issue: https://github.com/pytorch/pytorch/issues/22442
+        # probs = F.gumbel_softmax(
+        #     logits, tau=tau, hard=False, dim=-1
+        # )                                            # (B*L, N)
+        
+        probs = F.softmax(logits / tau, dim=-1)
 
         # 4) Take the top k indices, make a "hard" one-hot mask
         topk_vals, topk_idx = probs.topk(self.index_k, dim=-1)        # (B*L, k)
